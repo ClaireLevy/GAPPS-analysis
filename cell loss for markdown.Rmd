@@ -240,3 +240,161 @@ Things to try
 -- forget about the tube material for now
 
 -- Not totally related to the CyTOF goal but it would be interesting to filter some of the cells and see how the guava counts change.
+
+
+
+###Continued experimentation
+
+Conditions
+
+* 2% PFA: Hladik, Endpoints and 5th floor x 2 (pH 7 and 7.4)
+
+* 4% PFA: Hladik, Endpoints and 5th floor x 2 (pH 7 and 7.4)
+
+* FACS lysing: Endpoints and 5th flr
+
+Counted after thawing, 10 min after fixation, 1 hr after fixation, 21 hr after fixation and after H2O spin
+
+Counted with Guava for all counts and manually for all except post H2O
+
+```{r,echo=FALSE,message=FALSE, warning=FALSE}
+
+
+require(scales)
+require(dplyr)
+require(ggplot2)
+
+fix2Data<-read.csv('../cell loss experiments/Experiment Data/fixation2.csv')
+
+fix2Data$Time.Fixed<-factor(fix2Data$Time.Fixed, levels= c('0','10 min', '1 hr','21 hr', 'post H2O'), ordered= TRUE)
+
+fix2Data$pH<-factor(fix2Data$pH, levels= c('7','7.4'), ordered= TRUE)
+
+fix2Data$Percent<-factor(fix2Data$Percent, levels= c('2','4'), ordered= TRUE)
+
+guava<-filter(fix2Data, Method =="Guava")
+manual<-filter(fix2Data, Method=='Manual')
+```
+
+
+Here is the guava data, first the PFA conditions, colored by source and facetted by pH and percent PFA.
+
+
+```{r, echo=FALSE, warning=FALSE, messsage=FALSE}
+
+PFA<-filter(guava, Condition!="FACS lyse")
+
+ggplot(PFA,aes(x = Time.Fixed, y = Total))+ 
+  geom_point(aes(color=Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2), limits=c(8E5,3E6))+
+  facet_grid(pH~Percent) + ggtitle('Guava, PFA, total cells')
+
+ggplot(PFA,aes(x = Time.Fixed, y = Viability))+ 
+  geom_point(aes(color = Source), size=4, alpha=0.5)+scale_y_continuous(limits=c(0,100))+
+  facet_grid(pH~Percent) + ggtitle('Guava, PFA, Viability ')
+```
+It looks like source doesn't matter so let's remove that variable...
+
+Conclusions
+
+* 2% PFA was maybe a little better in terms of total cells
+
+* 4% PFA seemed to lower the viability more quickly than 2%. After 1hr, viab was still quite high for 2% but dropped more for 4%. Same with the count at 21hr. This seems important if we want them to be as fixed as possible before adding H2O
+
+* I don't see much of a difference between the different pH's. So it probably doesn't hurt to adjust the pH to 7.4 but not terrible if it is at 7?
+
+* Our old PFA seems just as good as the endpoints newer solution.
+
+
+Here are the same things for the FACS lyse conditions, colored by source.
+
+```{r, echo=FALSE, message=FALSE,warning=FALSE}
+
+FACSlyse<-filter(guava, Condition=='FACS lyse')
+
+ggplot(FACSlyse,aes(x = Time.Fixed, y = Total))+ 
+  geom_point(aes(color=Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2), limits=c(8E5,2E6))+ ggtitle('Guava, FACS lyse, total cells')
+
+
+ggplot(FACSlyse,aes(x = Time.Fixed, y = Viability))+
+  geom_point(aes(color = Source), size=4, alpha=0.5)+
+  scale_y_continuous(limits=c(0,100))+
+  ggtitle('Guava, FACS lyse, viability')
+```
+
+Conclusions
+
+* FACS lyse gets viability down to ~25% after 10mins while the PFA took overnight to get there. But there doesn't seem to be any change until the water is added. I'll do both next time.
+
+
+* I don't know why the total cells varied so much. Maybe we didn't resuspend evenly?
+
+
+Differences between manual and guava counts for total cells, first for the PFA conditions, then the FACS lysing conditions.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+guava3count<-select(filter(guava,Time.Fixed!='post H2O'),Total,Live, Dead, Viability)
+colnames(guava3count)<-c('gTotal','gLive','gDead', 'gViab' )
+
+guavaManual<-cbind(manual, guava3count)
+guavaManual<-mutate(guavaManual, 
+                    differenceTotal= Total-gTotal, 
+                    differenceViability=Viability-gViab)
+PFAdiff<-filter(guavaManual, Condition!="FACS lyse")
+
+FACSlyseDiff<-filter(guavaManual,Condition=="FACS lyse")
+
+ggplot(PFAdiff,aes(x = Time.Fixed, y = differenceTotal))+ 
+  geom_point(aes(color = Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2))+
+  facet_grid(pH~Percent)+ ggtitle('Difference in total guava and manual counts:PFA')
+
+
+
+ggplot(FACSlyseDiff,aes(x = Time.Fixed, y = differenceTotal))+ 
+  geom_point(aes(color = Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2))+ggtitle('Difference in total guava and manual counts: FACS lysing')
+```
+Greatest differences between manual and guava counts for totals were at the 21hr count. 4 conditions had a count difference of >9E5. Now a comparison of live counts vs dead counts to see where the biggest difference was.
+
+```{r, echo=FALSE}
+
+PFAdiff<-mutate(PFAdiff, LiveDiff = Live-gLive, DeadDiff= Dead-gDead) 
+FACSlyseDiff<-mutate(FACSlyseDiff, LiveDiff = Live-gLive, DeadDiff= Dead-gDead)
+
+ggplot(PFAdiff,aes(x = Time.Fixed, y = LiveDiff))+ 
+  geom_point(aes(color = Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2))+
+  facet_grid(pH~Percent)+ ggtitle('Manual-guava live counts:PFA')
+
+ggplot(PFAdiff,aes(x = Time.Fixed, y = DeadDiff))+ 
+  geom_point(aes(color = Source), size=4, alpha=0.5)+
+  scale_y_continuous(labels = scientific_format(digits = 2))+
+  facet_grid(pH~Percent)+ ggtitle('Manual-guava DEAD counts:PFA')
+
+```
+
+Here's the mean of the live and dead count differences
+
+```{r, echo=FALSE}
+
+
+summaryLive<- PFAdiff %>%
+  group_by(Percent, pH, Source)%>%
+  select(Percent,pH, Source, LiveDiff) %>%
+  summarise(mean(LiveDiff))
+
+summaryDead<-PFAdiff %>%
+  group_by(Percent, pH, Source)%>%
+  select(Percent,pH, Source, DeadDiff) %>%
+  summarise(mean(DeadDiff))
+  
+summaryLive
+
+summaryDead
+
+```
+Manual live counts were most different from guava counts after 1hr and the dead counts were most different at the 21hr count.In most cases, the manual counts were higher than the guava but not always.
+
+```
