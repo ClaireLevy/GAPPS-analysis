@@ -1,0 +1,115 @@
+---
+title: "Flow and CyToF Neutrophils"
+author: "Claire Levy"
+date: "January 5, 2016"
+output: html_document
+---
+
+As of 5Jan16 we have 5 good flow samples using Rena's neutrophil panel and 4  successful CyToF samples from April-May 2015. The CyToF samples were cytobrushes from HVTN clinic and the flow samples are from Dr. Adams-Waldorf. The CyToF panel contained all the same markers as the flow panel, plus a lot more. 
+
+To generate the data used below,I used the following gating schemes:
+CyToF: singlets (intercalator1 vs event length)
+CD45+ (intercalator1 vs CD45)
+live (intercalator1 vs Cisplatin)
+neutrophils (CD14 vs CD66b)
+neutrophil subsets (CD16 vs CD66b)
+
+
+Flow: everything but beads (fsc vs ssc)
+singlets (fscH vs fscA)
+CD45+ (SSC vs CD45)
+live (SSC vs L/D)
+neutrophils (CD14 vs CD66b)
+neutrophil subsets (CD16 vs CD66b)
+
+Then I made freq-of-parent tables from the gates to use here.
+
+
+```{r}
+
+library(dplyr)
+library(reshape2)
+library(stringr)
+library(ggplot2)
+
+
+#read in freq table for flow
+
+#go up one folder to GAPPS projects (from GAPPS-analysis) then down to GAPPS 2015 Neutrophils.
+flowFreq <- read.csv("../GAPPS 2015 Neutrophils/FLOW freq table.csv")
+
+
+#I am only interested in the CD66b vs CD16 data, so I will only keep the columns that have those data (7 and 8) and the first column which has the sample names.
+
+#I want all the samples except the first two, 15-133-01, because the voltages were different for that sample and 15-134-01 since we didn't get enough live cells to show meaningful populations. Also I don't want the SD and mean (last 2 rows)
+
+flowFreq<- flowFreq[3:6,c(1,7:8)]
+
+#column names are terrible so I'll change them
+
+colnames(flowFreq)<-c("Sample","CD66b lo CD16 hi","CD66b hi CD16 mid-lo")
+
+#add a column saying what kind of data this is
+
+flowFreq<-flowFreq %>%
+  mutate(Type ="Flow Cytometry")
+
+#Change the sample names so they fit better on the x axis
+flowFreq$Sample <- c("135","137","138","139")
+
+#now read in the cyToF frequency data
+
+CyToFfreq <- read.csv("J:/MacLabUsers/Claire/Projects/GAPPS Project/GAPPS 2015 Neutrophils/NORMED April-May2015 freq table.csv")
+
+#also want the columns with CD16 CD66b data (6 and 7)and the first column with the names and all the rows except the last 2
+
+CyToFfreq <-CyToFfreq[1:4,c(1,6:7)]
+
+
+colnames(CyToFfreq)<-c("Sample","CD66b lo CD16 hi","CD66b hi CD16 mid-lo")
+
+#change the sample names to less terrible
+
+CyToFfreq$Sample<- c("4884b","5168","4897","5084")
+#add a column saying what kind of data this is
+
+CyToFfreq<-CyToFfreq %>%
+  mutate(Type ="Mass Cytometry")
+
+
+
+
+#combine the data sets
+
+combinedData <- rbind(CyToFfreq,flowFreq)
+
+#melt for plotting
+
+meltCombinedData <- melt(combinedData)
+
+
+names(meltCombinedData)[3:4]<-c("Population","Frequency")
+
+#The frequencies don't add to 100 so Ill make a summary table to calculate that. The column CD66bPos is each frequency divided by the sum of the frequencies
+
+
+meltCombinedData<-meltCombinedData %>%
+  group_by(Sample)%>%
+  mutate(total = sum(Frequency))%>%
+  mutate(CD66bPos = (Frequency/total)*100)
+
+
+stackedBar<-ggplot(meltCombinedData, aes(x=Sample, y = CD66bPos))+
+  geom_bar(aes(fill = Population),stat="identity")+
+  labs(y="Frequency (Percent)")+
+  theme(axis.text.x=element_text(vjust=0.8, size=8),
+        axis.title=element_text(size= 12),
+        legend.title=element_text(size=12),
+        axis.title.x=element_text(vjust=.2),
+        plot.title = element_text(vjust=2),
+        aspect.ratio = 0.6)+
+    ggtitle("Frequency of CD66b+ sub-populations")
+
+ggsave("stackedBar.png",dpi=600)
+```
+
