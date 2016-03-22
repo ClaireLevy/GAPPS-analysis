@@ -1,0 +1,339 @@
+---
+title: 'Cytobrush Preservation: Whole brush vs. Isolated cells'
+output:
+  md_document:
+    variant: markdown_github
+  
+---
+ 
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+require(dplyr)
+require(ggplot2)
+require(knitr)
+require(stringr)
+require(scales)
+require(pander)
+require(reshape2)
+
+
+
+
+
+#read in the tables and make all the colnames the same
+ 
+data<-read.csv("../HVTN cytobrushes whole vs isolated/raw data/5031 table.csv")
+
+names(data)[12]<-"Brush.number"
+ 
+data2<-read.csv("../HVTN cytobrushes whole vs isolated/raw data/5123 table.csv")
+names(data2)[12]<-"Brush.number"
+ 
+
+data3<-read.csv("../HVTN cytobrushes whole vs isolated/raw data/5080 table.csv")
+ names(data3)[3]<-"All.cells"
+ names(data3)[4]<-"All.cells.live"
+ 
+data4<-read.csv('../HVTN cytobrushes whole vs isolated/raw data/5054 table.csv')
+ 
+data5<-read.csv('../HVTN cytobrushes whole vs isolated/raw data/4999 table.csv')
+ 
+ data6<-read.csv('../HVTN cytobrushes whole vs isolated/raw data/5096 table.csv')
+ 
+ #fix an error in the 5054 data set
+ data4$X<-str_replace(data4$X, "5123", "5054")
+ 
+ data<-rbind(data,data2, data3, data4, data5,data6)
+ #rename the first column that is called X for some reason
+ names(data)[1]<-"Sample"
+ 
+ 
+ 
+ #remove the summary stats
+ data<-filter(data, Sample!="Mean")
+ data<-filter(data,Sample!="SD")
+ 
+
+#make a vector of the fraction of beads counted for each sample
+# Group by sample first.
+fraction<-data%>%
+  group_by(Sample)%>%
+summarise(bead.fraction = beads/Trucount)
+
+
+
+#melt the data and make all the annotations id.vars
+MeltedData<-melt(data,id.vars= c("Sample", "Method","Brush.number","Trucount"),variable.name="CellType", value.name="Counts")
+
+#get rid of the beads in the cell type column
+MeltedData<-filter(MeltedData, CellType!="beads")
+
+# make a column for the bead fractions
+MeltedData$bead.fraction<-fraction$bead.fraction
+
+#add a column with AbsCounts
+MeltedData<-mutate(MeltedData, AbsCounts=Counts/bead.fraction)
+
+# Remove the "brush" and "cells" from the sample names
+#substr starting at character 1 and go until character 4
+MeltedData$Sample<-substr(MeltedData$Sample,1,4)
+
+#Make the Samples factors so I can order them on the plots
+MeltedData$Sample<-factor(MeltedData$Sample, levels=c("5031","5123","5054","5080","4999","5096"))
+
+
+#Change underlying factor names to get rid of the dots in the #celltype names
+
+levels(MeltedData$CellType)<-c("beads","All cells","All live cells","Neutrophils","Live Neutrophils","Macrophages","Live Macrophages","T cells","Live T cells")
+
+#Make the brush number a factor
+MeltedData$Brush.number<-as.factor(MeltedData$Brush.number)
+
+liveCells<-filter(MeltedData,
+                  CellType=(str_detect(MeltedData$CellType, "Live")==TRUE|str_detect(MeltedData$CellType,"live")==TRUE))
+
+allCells<-filter(MeltedData,
+                 CellType=(str_detect(MeltedData$CellType, "Live")==FALSE & str_detect(MeltedData$CellType,"live")==FALSE))
+
+allCells$Percent.live<-100*(liveCells$AbsCounts/allCells$AbsCounts)
+
+PercentLive<-select(allCells, Sample, Method,Brush.number, CellType,Percent.live)
+
+```
+
+##Questions
+
+1) Can cryopreserving a cytobrush prior to isolating the cells from the brush result in  viabilities that are comparable to the traditional cryopreservation method?
+
+2) Are there differences in recovery for different cell types?
+  
+##Protocol
+
+###Sample Processing
+
+We collected samples from 6 volunteers, two brushes per volunteer. Cells from one brush were isolated per the usual protocol ("Isolated cells") and the other brush was cryopreserved without isolating the cells ("Whole brush"). 
+
+For each brush, the transport media was centrifuged and the cells were added to the cryovial with cells isolated from the brush or the whole brush itself. Because cell type and number differ between the first and second brush, we alternated the which brush (#1 or #2) was selected to be the "whole brush".
+
+We used  the Seattle HES BSA cryopreservative in 5ml cryovials to preserve both the whole brush and isolated cells. 
+
+##Thawing
+
+Both sample types were thawed in a 37C water bath followed by the dropwise addition of warm RPMI. After thawing,cells were isolated from the whole brush per the usual cytobrush protocol, using room temperature PBS. Cells were stained per the usual staining protocol and analyzed with FACS,Flowjo v.X. and R.
+
+##Caveats
+
+Here are some things to think about while looking at the plots
+
+* 5031 and 5123 were thawed and FACS analyzed at the same time, as were 5054 and 5080.
+
+* 4999 brushes were not labeled as #1 and #2 so I guessed about which was which.
+
+
+## Conclusions
+
+
+1) Yes, brushes that were frozen whole had viabilities that were comparable to brushes isolated in the usual manner.
+
+2) Viability for the T cells was consistent between the two methods and it doesn't seem to matter which brush was frozen whole(#1 or #2).
+
+In half the samples, Macrophages and Neutrophils from the whole brush didn't survive well, regardless of the brush number. This was most obvious in samples 5054 and 5080 (which were thawed at the same time).
+
+##Absolute Counts
+```{r,echo=FALSE,warning=FALSE, message=FALSE}
+
+#Absolute counts of total cells
+ggplot(allCells,(aes(x=Method, y=AbsCounts)))+ 
+  geom_point(aes(color = Sample),size=4)+
+  geom_line(aes(color = Sample, group=Sample))+
+  facet_wrap(~CellType, scales=('free_y'))+ylab("Absolute Counts")+
+  scale_y_continuous(labels=scientific_format(digits=2))+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))+
+  ggtitle("Total Cells \n\ (Note different scales)")
+```
+
+##Viability and brush number
+
+```{r,echo=FALSE,warning=FALSE, message=FALSE}
+
+#plot of % live, color=sample,shape=brushnumber 
+#also use scale_shape_discrete to change legend title!!!!
+ggplot(PercentLive,(aes(x=Method, y=Percent.live)))+ 
+  geom_point(aes(color = Sample,shape=Brush.number),size=4)+
+  geom_line(aes(color = Sample, group=Sample))+
+  facet_wrap(~CellType)+ylab("Percent Viability")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))+
+  scale_shape_discrete(name="Brush number")+
+  ggtitle("Viability")
+
+```
+
+
+Here is that same plot again but without shape mapped to brush number in case that is better
+
+```{r,fig.cap="Viability for three cell types and all cells.",echo=FALSE,warning=FALSE, message=FALSE}
+
+#plot of % live, color=sample
+ggplot(PercentLive,(aes(x=Method, y=Percent.live)))+ 
+  geom_point(aes(color = Sample),size=4)+
+  geom_line(aes(color = Sample, group=Sample))+
+  facet_wrap(~CellType)+ylab("Percent Viability")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))+
+  ggtitle("Viability")
+
+```
+
+Another way of looking at viability and brush number
+
+```{r,echo=F,message=FALSE,warning=FALSE}
+
+
+#plot of % live, shape = brush number, removed the shape legend as not necessary (guides(shape=FALSE))
+
+ggplot(PercentLive,(aes(x=Sample, y=Percent.live)))+ 
+  geom_point(aes(color= Method, shape=Brush.number),size=6)+
+  scale_shape_manual(values=c(49,50))+guides(shape=FALSE)+
+  facet_wrap(~CellType)+ ylab("Viability")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))+
+  ggtitle("Percent Viability")
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+
+
+GAPPSdata<-read.csv("../HVTN cytobrushes whole vs isolated/raw data/GAPPS CPA data.csv")
+GAPPSrecovViab<-GAPPSdata[,c(2,10:15)]
+
+GAPPSrecovViab<-melt(data=GAPPSrecovViab, id.vars="Sample",variable.name="Cell.Type", value.name="Percent")
+
+#make a new column for measurement that will say "recovery" or "viability"
+
+GAPPSrecovViab<-mutate(GAPPSrecovViab, Measurement= ifelse(str_detect(GAPPSrecovViab$Cell.Type,"Recov") ==TRUE,"Recovery","Viability"))
+
+
+##now rename the Cell types to strings without recov or viab
+
+GAPPSrecovViab$Cell.Type<-ifelse(str_detect(GAPPSrecovViab$Cell.Type,"Neutro")==TRUE,"Neutrophils",ifelse(str_detect(GAPPSrecovViab$Cell.Type,"Macro")==TRUE,"Macrophages","T.cells"))
+
+#Now rearrange so that I have a df with columns for sample,celltype
+#%recov and % Viab side by side.
+Recov<-filter(GAPPSrecovViab,Measurement=="Recovery")
+Viab<-filter(GAPPSrecovViab,Measurement!="Recovery")
+
+RecovViab<-merge(Recov, Viab, by=c("Sample","Cell.Type"))
+
+names(RecovViab)[3]<-"Percent.Recovery"
+names(RecovViab)[5]<-"Percent.Viability"
+
+#get rid of those dots
+RecovViab$Cell.Type<-factor(RecovViab$Cell.Type,levels=c("Macrophages","Neutrophils","T.cells"))
+
+levels(RecovViab$Cell.Type)<-c("Macrophages","Neutrophils","T cells")
+
+
+```
+
+Recovery vs viability
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+
+##plot of recov vs viab all cell types
+ggplot(RecovViab, aes(x=Percent.Viability,y=Percent.Recovery))+ geom_point(aes(),size=3,alpha=0.5)+
+  facet_wrap(~Cell.Type)+
+  labs(x="Percent Viability", y="Percent Recovery")+
+  ggtitle("Viability vs. recovery")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))
+```
+
+
+#T cells only
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+
+###filter to just T cells
+Tcells<-filter(RecovViab,Cell.Type=="T cells")
+##plot of recov vs viab all cell types
+ggplot(Tcells, aes(x=Percent.Viability,y=Percent.Recovery))+ geom_point(aes(),size=3,alpha=0.5)+
+  facet_wrap(~Cell.Type)+
+  labs(x="Percent Viability", y="Percent Recovery")+
+  ggtitle("T-cell viability vs. recovery")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))
+```
+
+
+Spearman's r for correlation between viability and recovery(GAPPS)
+```{r,echo=FALSE}
+#correlations of the recovery and viability
+correlation<-RecovViab%>%
+  group_by(Cell.Type)%>%
+  summarise(r=round(cor(Percent.Viability,y=Percent.Recovery,method='spearman'),2))
+names(correlation)[1]<-"Cell Type" # get rid of the dots plz
+pander(correlation)
+
+```
+Sean's data
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+
+#now entering SH's vaginal cell viability and recovery data and munging to make it match mine
+
+SHdata<-read.csv("../HVTN cytobrushes whole vs isolated/raw data/SH recov viab data.csv")
+
+names(SHdata)[5:7]<-c("Cell.Type","Percent.Viability","Percent.Recovery")
+
+
+SHdata$Cell.Type<-ifelse(str_detect(SHdata$Cell.Type,"CD3")==TRUE,"T cells","Macrophages")
+
+SHdata$Cell.Type<-factor(SHdata$Cell.Type)
+
+
+#Just show the T cells
+SHTcells<-filter(SHdata,Cell.Type=="T cells")
+
+
+## SH data viab vs recov plot
+
+ggplot(SHTcells, aes(x=Percent.Viability,y=Percent.Recovery))+ geom_point(aes(),size=3, alpha=0.5)+ labs(x="Percent Viability", y="Percent Recovery") + ggtitle("T-cell viability vs. recovery")+
+  theme(
+    strip.text=element_text(size=20),
+    plot.title=element_text(size=30,vjust=2),
+    axis.title=element_text(size=20),
+   axis.text=element_text(size=15))
+  
+```
+
+
+Spearman's r for correlation between viability and recovery(Sean's data)
+
+```{r,echo=FALSE,warning=F,message=FALSE}
+SHcorrelation<-SHdata%>%
+  group_by(Cell.Type)%>%
+  summarise(r=round(cor(Percent.Viability,y=Percent.Recovery,method='spearman'),2))
+
+pander(SHcorrelation)
+```
+
+
+
+
+
